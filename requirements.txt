@@ -1,0 +1,4 @@
+psutil
+plyer
+# Windows only (install manually on Windows):
+# pycaw
