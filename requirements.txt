@@ -1,6 +1,7 @@
-sounddevice
-numpy
 plyer
 pyttsx3
 # Windows only (installed automatically by install.bat):
 # pycaw
+# macOS / Linux only:
+# sounddevice
+# numpy
