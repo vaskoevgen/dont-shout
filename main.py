@@ -51,9 +51,13 @@ POLL_INTERVAL = 0.05
 
 # ── Windows peak meter (no audio stream needed) ────────────────────────────────
 
-def get_mic_peak_windows() -> float:
-    """Return mic peak level (0.0–1.0) via Windows meter API. No stream, no exclusive access."""
-    try:
+_windows_meter = None
+
+
+def _init_windows_meter():
+    """Initialize COM meter object once and cache it."""
+    global _windows_meter
+    if _windows_meter is None:
         import comtypes
         from ctypes import cast, POINTER
         from comtypes import CLSCTX_ALL
@@ -64,8 +68,14 @@ def get_mic_peak_windows() -> float:
         )
         mic = enumerator.GetDefaultAudioEndpoint(1, 0)  # eCapture=1, eConsole=0
         interface = mic.Activate(IAudioMeterInformation._iid_, CLSCTX_ALL, None)
-        meter = cast(interface, POINTER(IAudioMeterInformation))
-        return meter.GetPeakValue()
+        _windows_meter = cast(interface, POINTER(IAudioMeterInformation))
+    return _windows_meter
+
+
+def get_mic_peak_windows() -> float:
+    """Return mic peak level (0.0–1.0) via Windows meter API. No stream, no exclusive access."""
+    try:
+        return _init_windows_meter().GetPeakValue()
     except Exception as e:
         print(f"[WARN] Mic meter read failed: {e}")
         return 0.0

@@ -2,17 +2,19 @@
 
 Reminds you to stop shouting when headphones are connected — speaks a voice alert and shows a notification when your mic picks up that you're talking too loudly.
 
-Works alongside games and other apps — the mic is shared, not grabbed exclusively.
+Works alongside games and other apps — the mic is never grabbed exclusively.
 
 ## How it works
 
-On startup it listens to your mic for 3 seconds to measure ambient noise, then sets a threshold automatically. No manual calibration needed.
+On startup it samples the mic for 3 seconds to measure ambient noise, then sets a threshold automatically. No manual calibration needed.
 
 While running it continuously monitors the mic. When your voice exceeds the threshold and headphones are connected, it:
 1. Speaks a voice alert through your headphones
 2. Shows a desktop notification
 
-On Windows the mic is opened via **sounddevice** in WASAPI shared mode, so games, Discord, and other apps can use the mic at the same time.
+**On Windows:** reads the mic peak level via the Windows Audio peak meter API — no audio stream is opened at all, so the mic stays completely free for games, Discord, and any other app.
+
+**On macOS/Linux:** uses `sounddevice` to sample the mic.
 
 ## Requirements
 
@@ -26,7 +28,7 @@ On Windows the mic is opened via **sounddevice** in WASAPI shared mode, so games
 
 `install.bat` will:
 - Stop any previously running instance automatically
-- Install all Python dependencies (`sounddevice`, `numpy`, `plyer`, `pycaw`, `pyttsx3`)
+- Install Python dependencies (`plyer`, `pycaw`, `pyttsx3`)
 - Add dont-shout to your Windows startup folder so it runs on every login
 - Offer to start it immediately
 
@@ -36,6 +38,7 @@ On Windows the mic is opened via **sounddevice** in WASAPI shared mode, so games
 
 ```bash
 pip install -r requirements.txt
+pip install sounddevice numpy
 python main.py
 ```
 
@@ -48,7 +51,7 @@ All settings are at the top of `main.py`:
 | `ALERT_MESSAGE` | `"Don't shout..."` | The text spoken aloud when alert fires |
 | `SENSITIVITY` | `3.0` | Multiplier over ambient noise to trigger. Raise if too sensitive, lower if not enough. |
 | `COOLDOWN_SECONDS` | `10` | Minimum seconds between alerts |
-| `CONSECUTIVE_CHUNKS_REQUIRED` | `3` | Loud chunks in a row before alerting (prevents false-positives from single spikes) |
+| `CONSECUTIVE_REQUIRED` | `3` | Loud readings in a row before alerting (prevents false-positives from single spikes) |
 | `AMBIENT_SAMPLE_SECONDS` | `3` | How long to sample ambient noise on startup — stay quiet during this |
 | `HEADPHONE_KEYWORDS` | `["headphone", ...]` | Device name substrings used to detect headphones |
 | `HEADPHONE_CHECK_INTERVAL` | `5.0` | How often (seconds) to re-check if headphones are connected |

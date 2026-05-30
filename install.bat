@@ -26,7 +26,7 @@ if exist "%PID_FILE%" (
 echo Installing Python dependencies...
 python -m pip install --upgrade pip >nul
 
-python -m pip install sounddevice numpy plyer pycaw pyttsx3
+python -m pip install plyer pycaw pyttsx3
 if errorlevel 1 (
     echo ERROR: pip install failed.
     pause
