@@ -196,8 +196,8 @@ def get_tts_engine() -> pyttsx3.Engine | None:
     return _tts_engine
 
 
-def alert(icon: pystray.Icon) -> None:
-    update_tray(icon, headphones=True, alerted=True, level=1.0, threshold=0.0)
+def alert(icon: pystray.Icon, level: float, threshold: float) -> None:
+    update_tray(icon, headphones=True, alerted=True, level=level, threshold=threshold)
 
     engine = get_tts_engine()
     if engine:
@@ -260,7 +260,7 @@ def run(icon: pystray.Icon, get_level) -> None:
             and (now - last_alerted) >= COOLDOWN_SECONDS
             and headphones
         ):
-            alert(icon)
+            alert(icon, level=level, threshold=threshold)
             last_alerted = now
             loud_streak = 0
             # restore icon color after alert
