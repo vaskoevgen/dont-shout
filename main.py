@@ -165,11 +165,28 @@ def _speak(text: str) -> None:
 HEADPHONE_CHECK_INTERVAL = 5.0
 
 
+def open_mic_stream(pa: pyaudio.PyAudio) -> pyaudio.Stream:
+    """Open mic in WASAPI shared mode on Windows so other apps can use the mic too."""
+    if platform.system() == "Windows":
+        try:
+            wasapi_info = pa.get_host_api_info_by_type(pyaudio.paWASAPI)
+            mic_index = wasapi_info["defaultInputDevice"]
+            if mic_index >= 0:
+                return pa.open(
+                    format=FORMAT, channels=CHANNELS, rate=RATE,
+                    input=True, input_device_index=mic_index,
+                    frames_per_buffer=CHUNK,
+                )
+        except Exception as e:
+            print(f"[WARN] WASAPI shared mode failed, falling back: {e}")
+    return pa.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
+
+
 def main() -> None:
     PID_FILE.write_text(str(os.getpid()))
 
     pa = pyaudio.PyAudio()
-    stream = pa.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
+    stream = open_mic_stream(pa)
 
     threshold = measure_ambient(stream)
     print("dont-shout running... Ctrl+C to stop.")
