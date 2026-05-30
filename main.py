@@ -53,7 +53,7 @@ HEADPHONE_CHECK_INTERVAL = 5.0
 # ── Audio constants ────────────────────────────────────────────────────────────
 
 CHUNK = 1024
-RATE = 16000
+RATE = 44100  # standard Windows audio rate; required for WASAPI shared mode
 CHANNELS = 1
 
 
@@ -161,13 +161,32 @@ def _speak(text: str) -> None:
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
+def open_mic_stream() -> sd.InputStream:
+    """Open mic explicitly via WASAPI shared mode on Windows."""
+    if platform.system() == "Windows":
+        try:
+            hostapis = sd.query_hostapis()
+            wasapi = next((api for api in hostapis if "WASAPI" in api["name"]), None)
+            if wasapi and wasapi["default_input_device"] >= 0:
+                stream = sd.InputStream(
+                    device=wasapi["default_input_device"],
+                    samplerate=RATE, channels=CHANNELS,
+                    dtype="int16", blocksize=CHUNK,
+                )
+                stream.start()
+                print("Mic opened via WASAPI shared mode.")
+                return stream
+        except Exception as e:
+            print(f"[WARN] WASAPI setup failed, falling back to default: {e}")
+    stream = sd.InputStream(samplerate=RATE, channels=CHANNELS, dtype="int16", blocksize=CHUNK)
+    stream.start()
+    return stream
+
+
 def main() -> None:
     PID_FILE.write_text(str(os.getpid()))
 
-    # sounddevice uses WASAPI shared mode by default on Windows —
-    # the mic is shared with games and other apps simultaneously.
-    stream = sd.InputStream(samplerate=RATE, channels=CHANNELS, dtype="int16", blocksize=CHUNK)
-    stream.start()
+    stream = open_mic_stream()
 
     threshold = measure_ambient(stream)
     print("dont-shout running... Ctrl+C to stop.")
