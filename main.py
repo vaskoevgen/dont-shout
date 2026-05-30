@@ -10,7 +10,6 @@ Uses sounddevice (WASAPI shared mode on Windows) so the mic is shared
 with games and other apps simultaneously.
 """
 
-import math
 import os
 import platform
 import subprocess
