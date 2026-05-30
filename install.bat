@@ -13,6 +13,15 @@ if errorlevel 1 (
     exit /b 1
 )
 
+:: Stop any running instance using PID file
+set "PID_FILE=%~dp0.dont-shout.pid"
+if exist "%PID_FILE%" (
+    echo Stopping running dont-shout instance...
+    set /p OLD_PID=<"%PID_FILE%"
+    taskkill /pid %OLD_PID% /f >nul 2>&1
+    del "%PID_FILE%" >nul 2>&1
+)
+
 :: Install dependencies
 echo Installing Python dependencies...
 python -m pip install --upgrade pip >nul

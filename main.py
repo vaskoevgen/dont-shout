@@ -8,14 +8,18 @@ no manual calibration needed.
 """
 
 import math
+import os
 import platform
 import struct
 import subprocess
 import time
+from pathlib import Path
 
 import pyaudio
 import pyttsx3
 from plyer import notification
+
+PID_FILE = Path(__file__).parent / ".dont-shout.pid"
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
@@ -162,6 +166,8 @@ HEADPHONE_CHECK_INTERVAL = 5.0
 
 
 def main() -> None:
+    PID_FILE.write_text(str(os.getpid()))
+
     pa = pyaudio.PyAudio()
     stream = pa.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
 
@@ -205,6 +211,7 @@ def main() -> None:
         stream.stop_stream()
         stream.close()
         pa.terminate()
+        PID_FILE.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
