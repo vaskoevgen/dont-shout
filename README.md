@@ -1,68 +1,51 @@
 # dont-shout
 
-Reminds you to use your mic (not your outside voice) when headphones are connected and a game is running.
+Reminds you to stop shouting when headphones are connected — plays a sound and shows a notification when your mic picks up that you're speaking too loudly.
 
 ## How it works
 
-Every few seconds it checks:
-1. Are headphones connected?
-2. Is a game running?
+On startup it listens to your mic for 3 seconds to measure ambient noise, then sets a threshold automatically. No manual calibration needed.
 
-If both are true, it shows a desktop notification: **"Headphones on — don't shout!"**
+While running it continuously monitors the mic. When your voice exceeds the threshold and headphones are connected, it:
+1. Speaks a voice alert through your headphones
+2. Shows a desktop notification
 
 ## Requirements
 
 - Python 3.10+
 - Windows / macOS / Linux
 
-## Install & Run
+## Install (Windows)
 
-### Windows (automatic)
+Double-click `install.bat`. It will:
+- Install all Python dependencies (including the tricky `pyaudio` on Windows)
+- Add dont-shout to your Windows startup folder so it runs on every login
+- Offer to start it immediately
 
-Run the install script once — it sets up Python dependencies and adds the app to Windows startup:
+The only prerequisite is Python from [python.org](https://python.org) — tick **"Add Python to PATH"** during install.
 
-```bat
-install.bat
-```
-
-Then start it manually the first time (or just reboot):
-
-```bat
-pythonw main.py
-```
-
-### Manual (any OS)
+## Install (macOS / Linux)
 
 ```bash
 pip install -r requirements.txt
-
-# Windows only:
-pip install pycaw
-
 python main.py
 ```
 
-## Configuration
+## Tuning sensitivity
 
-All settings are at the top of `main.py` — just edit the constants directly:
+All settings are at the top of `main.py`:
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `CHECK_INTERVAL_SECONDS` | `5` | How often to check |
-| `NOTIFICATION_COOLDOWN_SECONDS` | `60` | Min time between notifications |
+| `ALERT_MESSAGE` | `"Don't shout..."` | The text spoken aloud when you trigger an alert |
+| `SENSITIVITY` | `3.0` | Multiplier over ambient noise to trigger. Raise if too sensitive, lower if not enough. |
+| `COOLDOWN_SECONDS` | `10` | Minimum seconds between alerts |
+| `CONSECUTIVE_CHUNKS_REQUIRED` | `3` | Loud chunks in a row before alerting (prevents spike false-positives) |
+| `AMBIENT_SAMPLE_SECONDS` | `3` | How long to sample on startup |
 | `HEADPHONE_KEYWORDS` | `["headphone", ...]` | Device name substrings to match |
-| `GAMES` | `[...]` | Game process names to watch for |
-
-### Adding a game
-
-1. Start the game
-2. Open Task Manager → Details tab
-3. Copy the process name (without `.exe`)
-4. Add it (lowercase) to the `GAMES` list in `main.py`
 
 ## Stopping it
 
-If started via `install.bat`, it runs as a background process on login.
-To stop it: Task Manager → find `pythonw.exe` → End Task.
+Task Manager → find `pythonw.exe` → End Task.
 
-To remove from startup: press `Win+R`, type `shell:startup`, delete the `dont-shout.vbs` shortcut.
+To remove from startup: `Win+R` → `shell:startup` → delete `dont-shout.vbs`.

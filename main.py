@@ -1,48 +1,77 @@
 #!/usr/bin/env python3
 """
-dont-shout: reminds you to use your mic (not your outside voice)
-when headphones are connected and a game is running.
+dont-shout: speaks a warning when you talk too loudly
+into your mic while headphones are connected.
+
+Threshold is measured automatically on startup from ambient noise —
+no manual calibration needed.
 """
 
+import math
 import platform
+import struct
 import subprocess
 import time
 
-import psutil
+import pyaudio
+import pyttsx3
 from plyer import notification
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-CHECK_INTERVAL_SECONDS = 5
-NOTIFICATION_COOLDOWN_SECONDS = 60
+# Message spoken aloud when you're too loud.
+ALERT_MESSAGE = "Don't shout, your mic can hear you fine."
+
+# Multiplier over ambient noise level to trigger an alert.
+# 3.0 means "3x louder than the background" = you're speaking aloud.
+# Increase if too sensitive, decrease if not sensitive enough.
+SENSITIVITY = 3.0
+
+# Seconds to wait before alerting again.
+COOLDOWN_SECONDS = 10
+
+# How many consecutive loud chunks before triggering (avoids single-noise spikes).
+CONSECUTIVE_CHUNKS_REQUIRED = 3
+
+# Seconds to sample ambient noise on startup.
+AMBIENT_SAMPLE_SECONDS = 3
 
 HEADPHONE_KEYWORDS = [
     "headphone", "headset", "earphone", "earbuds", "airpods",
 ]
 
-# Process names to watch for (lowercase, no .exe).
-# To find a game's name: Task Manager → Details tab while the game is running.
-GAMES = [
-    "csgo", "cs2", "dota2", "fortnite", "valorant", "minecraft",
-    "leagueoflegends", "witcher3", "cyberpunk2077", "overwatch",
-    "rocketleague", "pubg", "gta5", "elden_ring", "eldenring",
-    "apex_legends", "apexlegends", "battlefield", "cod",
-    "modernwarfare", "warzone", "steam", "epicgameslauncher",
-]
+# ── Audio constants ────────────────────────────────────────────────────────────
 
-# ── Core logic ────────────────────────────────────────────────────────────────
+CHUNK = 1024
+RATE = 16000
+FORMAT = pyaudio.paInt16
+CHANNELS = 1
 
-def is_game_running() -> tuple[bool, str]:
-    for proc in psutil.process_iter(["name"]):
-        try:
-            name = proc.info["name"].lower().replace(".exe", "").replace(" ", "")
-            for game in GAMES:
-                if game in name:
-                    return True, proc.info["name"]
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            pass
-    return False, ""
 
+def rms(data: bytes) -> float:
+    count = len(data) // 2
+    if count == 0:
+        return 0.0
+    shorts = struct.unpack(f"{count}h", data)
+    return math.sqrt(sum(s * s for s in shorts) / count)
+
+
+# ── Auto-calibration ───────────────────────────────────────────────────────────
+
+def measure_ambient(stream: pyaudio.Stream) -> float:
+    """Sample mic for a few seconds and return the peak RMS as the ambient baseline."""
+    print(f"Measuring ambient noise for {AMBIENT_SAMPLE_SECONDS}s — stay quiet...", flush=True)
+    samples = []
+    for _ in range(int(RATE / CHUNK * AMBIENT_SAMPLE_SECONDS)):
+        data = stream.read(CHUNK, exception_on_overflow=False)
+        samples.append(rms(data))
+    baseline = max(samples) if samples else 100.0
+    threshold = max(baseline * SENSITIVITY, 200.0)  # floor so silence rooms still work
+    print(f"Ambient peak: {baseline:.0f}  →  alert threshold: {threshold:.0f}\n")
+    return threshold
+
+
+# ── Headphone detection ────────────────────────────────────────────────────────
 
 def is_headphones_connected() -> bool:
     system = platform.system()
@@ -71,8 +100,7 @@ def _check_mac() -> bool:
             ["system_profiler", "SPAudioDataType"],
             capture_output=True, text=True, timeout=5,
         )
-        output = result.stdout.lower()
-        return any(kw in output for kw in HEADPHONE_KEYWORDS)
+        return any(kw in result.stdout.lower() for kw in HEADPHONE_KEYWORDS)
     except Exception as e:
         print(f"[WARN] macOS audio check failed: {e}")
     return False
@@ -84,39 +112,99 @@ def _check_linux() -> bool:
             ["pactl", "list", "sinks"],
             capture_output=True, text=True, timeout=5,
         )
-        output = result.stdout.lower()
-        return any(kw in output for kw in HEADPHONE_KEYWORDS)
+        return any(kw in result.stdout.lower() for kw in HEADPHONE_KEYWORDS)
     except Exception as e:
         print(f"[WARN] Linux audio check failed: {e}")
     return False
 
 
-def show_notification(game_name: str) -> None:
+# ── Alert ─────────────────────────────────────────────────────────────────────
+
+_tts_engine: pyttsx3.Engine | None = None
+
+
+def get_tts_engine() -> pyttsx3.Engine | None:
+    global _tts_engine
+    if _tts_engine is None:
+        try:
+            _tts_engine = pyttsx3.init()
+        except Exception as e:
+            print(f"[WARN] TTS init failed: {e}")
+    return _tts_engine
+
+
+def alert() -> None:
+    _speak(ALERT_MESSAGE)
     notification.notify(
-        title="Headphones on — don't shout!",
-        message=f"Playing {game_name}: use your mic, not your outside voice.",
+        title="Don't shout!",
+        message=ALERT_MESSAGE,
         app_name="dont-shout",
-        timeout=10,
+        timeout=5,
     )
-    print(f"[{time.strftime('%H:%M:%S')}] Notified for: {game_name}")
+    print(f"[{time.strftime('%H:%M:%S')}] Alert fired")
+
+
+def _speak(text: str) -> None:
+    engine = get_tts_engine()
+    if engine is None:
+        return
+    try:
+        engine.say(text)
+        engine.runAndWait()
+    except Exception as e:
+        print(f"[WARN] Speech failed: {e}")
 
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
+# Check headphones at most once every this many seconds (avoids hammering the audio API).
+HEADPHONE_CHECK_INTERVAL = 5.0
+
+
 def main() -> None:
+    pa = pyaudio.PyAudio()
+    stream = pa.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
+
+    threshold = measure_ambient(stream)
     print("dont-shout running... Ctrl+C to stop.")
-    last_notified = 0.0
 
-    while True:
-        headphones = is_headphones_connected()
-        game_running, game_name = is_game_running()
+    last_alerted = 0.0
+    last_headphone_check = 0.0
+    headphones = False
+    loud_streak = 0
 
-        now = time.time()
-        if headphones and game_running and (now - last_notified) >= NOTIFICATION_COOLDOWN_SECONDS:
-            show_notification(game_name)
-            last_notified = now
+    try:
+        while True:
+            data = stream.read(CHUNK, exception_on_overflow=False)
+            level = rms(data)
 
-        time.sleep(CHECK_INTERVAL_SECONDS)
+            if level > threshold:
+                loud_streak += 1
+            else:
+                loud_streak = 0
+
+            now = time.time()
+
+            # Refresh headphone state periodically, not every chunk
+            if now - last_headphone_check >= HEADPHONE_CHECK_INTERVAL:
+                headphones = is_headphones_connected()
+                last_headphone_check = now
+
+            if (
+                loud_streak >= CONSECUTIVE_CHUNKS_REQUIRED
+                and (now - last_alerted) >= COOLDOWN_SECONDS
+                and headphones
+            ):
+                alert()
+                last_alerted = now
+                loud_streak = 0
+
+    except KeyboardInterrupt:
+        print("\nStopped.")
+    finally:
+        stream.stop_stream()
+        stream.close()
+        pa.terminate()
 
 
 if __name__ == "__main__":

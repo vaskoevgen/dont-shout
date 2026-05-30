@@ -8,6 +8,7 @@ echo.
 python --version >nul 2>&1
 if errorlevel 1 (
     echo ERROR: Python not found. Install it from https://python.org and re-run this script.
+    echo        Make sure to tick "Add Python to PATH" during install.
     pause
     exit /b 1
 )
@@ -15,12 +16,23 @@ if errorlevel 1 (
 :: Install dependencies
 echo Installing Python dependencies...
 python -m pip install --upgrade pip >nul
-python -m pip install psutil plyer pycaw
+
+python -m pip install pyaudio
+if errorlevel 1 (
+    echo ERROR: Could not install pyaudio.
+    echo Try manually: pip install pyaudio
+    pause
+    exit /b 1
+)
+
+python -m pip install plyer pycaw pyttsx3
 if errorlevel 1 (
     echo ERROR: pip install failed.
     pause
     exit /b 1
 )
+
+echo.
 
 :: Get the directory where this script lives
 set "APP_DIR=%~dp0"
@@ -29,28 +41,27 @@ set "APP_DIR=%APP_DIR:~0,-1%"
 :: Find pythonw.exe (runs Python without a console window)
 for /f "delims=" %%i in ('where pythonw 2^>nul') do set "PYTHONW=%%i"
 if not defined PYTHONW (
-    :: Fall back to python.exe if pythonw not found
     for /f "delims=" %%i in ('where python') do set "PYTHONW=%%i"
 )
 
-echo.
 echo Creating startup shortcut...
 
-:: Create a .vbs launcher so there's no console window flash
+:: Create a .vbs launcher so there's no console window
 set "LAUNCHER=%APP_DIR%\launch.vbs"
 (
     echo Set objShell = CreateObject("WScript.Shell"^)
     echo objShell.Run """" ^& "%PYTHONW%" ^& """ """ ^& "%APP_DIR%\main.py" ^& """", 0, False
 ) > "%LAUNCHER%"
 
-:: Copy shortcut into Windows startup folder
+:: Add to Windows startup folder
 set "STARTUP=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
 copy "%LAUNCHER%" "%STARTUP%\dont-shout.vbs" >nul
 
 echo.
 echo Done!
 echo.
-echo  - dont-shout will now start automatically when you log in.
+echo  - dont-shout will start automatically when you log in.
+echo  - On first run it measures ambient noise for 3 seconds (stay quiet).
 echo  - To start it right now without rebooting, run:
 echo      wscript "%LAUNCHER%"
 echo.

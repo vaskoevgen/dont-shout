@@ -1,4 +1,5 @@
-psutil
+pyaudio
 plyer
+pyttsx3
 # Windows only (install manually on Windows):
 # pycaw
