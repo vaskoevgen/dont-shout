@@ -1,5 +1,6 @@
-pyaudio
+sounddevice
+numpy
 plyer
 pyttsx3
-# Windows only (install manually on Windows):
+# Windows only (installed automatically by install.bat):
 # pycaw

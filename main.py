@@ -5,17 +5,20 @@ into your mic while headphones are connected.
 
 Threshold is measured automatically on startup from ambient noise —
 no manual calibration needed.
+
+Uses sounddevice (WASAPI shared mode on Windows) so the mic is shared
+with games and other apps simultaneously.
 """
 
 import math
 import os
 import platform
-import struct
 import subprocess
 import time
 from pathlib import Path
 
-import pyaudio
+import numpy as np
+import sounddevice as sd
 import pyttsx3
 from plyer import notification
 
@@ -37,43 +40,38 @@ COOLDOWN_SECONDS = 10
 # How many consecutive loud chunks before triggering (avoids single-noise spikes).
 CONSECUTIVE_CHUNKS_REQUIRED = 3
 
-# Seconds to sample ambient noise on startup.
+# Seconds to sample ambient noise on startup — stay quiet during this.
 AMBIENT_SAMPLE_SECONDS = 3
 
+# Device name substrings used to detect headphones.
 HEADPHONE_KEYWORDS = [
     "headphone", "headset", "earphone", "earbuds", "airpods",
 ]
 
-# How often to re-check whether headphones are connected (seconds).
+# How often (seconds) to re-check if headphones are connected.
 HEADPHONE_CHECK_INTERVAL = 5.0
 
 # ── Audio constants ────────────────────────────────────────────────────────────
 
 CHUNK = 1024
 RATE = 16000
-FORMAT = pyaudio.paInt16
 CHANNELS = 1
 
 
-def rms(data: bytes) -> float:
-    count = len(data) // 2
-    if count == 0:
-        return 0.0
-    shorts = struct.unpack(f"{count}h", data)
-    return math.sqrt(sum(s * s for s in shorts) / count)
+def rms(data: np.ndarray) -> float:
+    return float(np.sqrt(np.mean(data.astype(np.float64) ** 2)))
 
 
 # ── Auto-calibration ───────────────────────────────────────────────────────────
 
-def measure_ambient(stream: pyaudio.Stream) -> float:
-    """Sample mic for a few seconds and return the peak RMS as the ambient baseline."""
+def measure_ambient(stream: sd.InputStream) -> float:
     print(f"Measuring ambient noise for {AMBIENT_SAMPLE_SECONDS}s — stay quiet...", flush=True)
     samples = []
     for _ in range(int(RATE / CHUNK * AMBIENT_SAMPLE_SECONDS)):
-        data = stream.read(CHUNK, exception_on_overflow=False)
+        data, _ = stream.read(CHUNK)
         samples.append(rms(data))
     baseline = max(samples) if samples else 100.0
-    threshold = max(baseline * SENSITIVITY, 200.0)  # floor so silence rooms still work
+    threshold = max(baseline * SENSITIVITY, 200.0)
     print(f"Ambient peak: {baseline:.0f}  →  alert threshold: {threshold:.0f}\n")
     return threshold
 
@@ -164,28 +162,13 @@ def _speak(text: str) -> None:
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
-def open_mic_stream(pa: pyaudio.PyAudio) -> pyaudio.Stream:
-    """Open mic in WASAPI shared mode on Windows so other apps can use the mic too."""
-    if platform.system() == "Windows":
-        try:
-            wasapi_info = pa.get_host_api_info_by_type(pyaudio.paWASAPI)
-            mic_index = wasapi_info["defaultInputDevice"]
-            if mic_index >= 0:
-                return pa.open(
-                    format=FORMAT, channels=CHANNELS, rate=RATE,
-                    input=True, input_device_index=mic_index,
-                    frames_per_buffer=CHUNK,
-                )
-        except Exception as e:
-            print(f"[WARN] WASAPI shared mode failed, falling back: {e}")
-    return pa.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
-
-
 def main() -> None:
     PID_FILE.write_text(str(os.getpid()))
 
-    pa = pyaudio.PyAudio()
-    stream = open_mic_stream(pa)
+    # sounddevice uses WASAPI shared mode by default on Windows —
+    # the mic is shared with games and other apps simultaneously.
+    stream = sd.InputStream(samplerate=RATE, channels=CHANNELS, dtype="int16", blocksize=CHUNK)
+    stream.start()
 
     threshold = measure_ambient(stream)
     print("dont-shout running... Ctrl+C to stop.")
@@ -197,7 +180,7 @@ def main() -> None:
 
     try:
         while True:
-            data = stream.read(CHUNK, exception_on_overflow=False)
+            data, _ = stream.read(CHUNK)
             level = rms(data)
 
             if level > threshold:
@@ -207,7 +190,6 @@ def main() -> None:
 
             now = time.time()
 
-            # Refresh headphone state periodically, not every chunk
             if now - last_headphone_check >= HEADPHONE_CHECK_INTERVAL:
                 headphones = is_headphones_connected()
                 last_headphone_check = now
@@ -224,9 +206,8 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\nStopped.")
     finally:
-        stream.stop_stream()
+        stream.stop()
         stream.close()
-        pa.terminate()
         PID_FILE.unlink(missing_ok=True)
 
 
