@@ -113,43 +113,30 @@ def update_tray(
         icon.title = f"dont-shout: no headphones detected"
 
 
-# ── Windows peak meter (no audio stream needed) ────────────────────────────────
-
-_windows_meter = None
-
-
-def _init_windows_meter():
-    """Initialize COM meter object once and cache it."""
-    global _windows_meter
-    if _windows_meter is None:
-        import comtypes
-        from ctypes import cast, POINTER
-        from comtypes import CLSCTX_ALL
-        from pycaw.pycaw import IAudioMeterInformation, IMMDeviceEnumerator, CLSID_MMDeviceEnumerator
-
-        enumerator = comtypes.CoCreateInstance(
-            CLSID_MMDeviceEnumerator, IMMDeviceEnumerator, CLSCTX_ALL
-        )
-        mic = enumerator.GetDefaultAudioEndpoint(1, 0)  # eCapture=1, eConsole=0
-        interface = mic.Activate(IAudioMeterInformation._iid_, CLSCTX_ALL, None)
-        _windows_meter = cast(interface, POINTER(IAudioMeterInformation))
-    return _windows_meter
-
-
-def get_mic_peak_windows() -> float:
-    """Return mic peak level (0.0–1.0) via Windows meter API. No stream, no exclusive access."""
-    try:
-        return _init_windows_meter().GetPeakValue()
-    except Exception as e:
-        print(f"[WARN] Mic meter read failed: {e}")
-        return 0.0
-
-
-# ── sounddevice path (macOS / Linux) ──────────────────────────────────────────
+# ── Mic capture (WASAPI shared mode on Windows, default on macOS/Linux) ────────
 
 def open_mic_stream():
     import numpy as np
     import sounddevice as sd
+
+    if platform.system() == "Windows":
+        # Explicitly use WASAPI shared mode so the mic is shared with games
+        hostapis = sd.query_hostapis()
+        wasapi = next((a for a in hostapis if "WASAPI" in a["name"]), None)
+        if wasapi and wasapi["default_input_device"] >= 0:
+            try:
+                extra = sd.WasapiSettings(exclusive=False)
+                stream = sd.InputStream(
+                    device=wasapi["default_input_device"],
+                    samplerate=44100, channels=1, dtype="int16", blocksize=1024,
+                    extra_settings=extra,
+                )
+                stream.start()
+                print("Mic opened via WASAPI shared mode.")
+                return stream, np
+            except Exception as e:
+                print(f"[WARN] WASAPI shared mode failed, falling back: {e}")
+
     stream = sd.InputStream(samplerate=44100, channels=1, dtype="int16", blocksize=1024)
     stream.start()
     return stream, np
@@ -322,13 +309,8 @@ def main() -> None:
         ),
     )
 
-    if platform.system() == "Windows":
-        print("Windows: using peak meter API (mic stays free for games).")
-        get_level = get_mic_peak_windows
-        stream = None
-    else:
-        stream, np_mod = open_mic_stream()
-        get_level = lambda: get_mic_peak_stream(stream, np_mod)
+    stream, np_mod = open_mic_stream()
+    get_level = lambda: get_mic_peak_stream(stream, np_mod)
 
     thread = threading.Thread(target=run, args=(icon, get_level), daemon=True)
     thread.start()

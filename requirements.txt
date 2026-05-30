@@ -1,9 +1,8 @@
+sounddevice
+numpy
 plyer
 pyttsx3
 pystray
 Pillow
 # Windows only (installed automatically by install.bat):
 # pycaw
-# macOS / Linux only:
-# sounddevice
-# numpy
