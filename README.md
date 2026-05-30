@@ -1,6 +1,6 @@
 # dont-shout
 
-Reminds you to stop shouting when headphones are connected — plays a sound and shows a notification when your mic picks up that you're speaking too loudly.
+Reminds you to stop shouting when headphones are connected — speaks a voice alert and shows a notification when your mic picks up that you're talking too loudly.
 
 ## How it works
 
@@ -10,6 +10,8 @@ While running it continuously monitors the mic. When your voice exceeds the thre
 1. Speaks a voice alert through your headphones
 2. Shows a desktop notification
 
+On Windows the mic is opened in **WASAPI shared mode**, so games and other apps can use it at the same time.
+
 ## Requirements
 
 - Python 3.10+
@@ -17,12 +19,16 @@ While running it continuously monitors the mic. When your voice exceeds the thre
 
 ## Install (Windows)
 
-Double-click `install.bat`. It will:
-- Install all Python dependencies (including the tricky `pyaudio` on Windows)
+1. Install Python from [python.org](https://python.org) — tick **"Add Python to PATH"** during install
+2. Double-click `install.bat`
+
+`install.bat` will:
+- Stop any previously running instance automatically
+- Install all Python dependencies
 - Add dont-shout to your Windows startup folder so it runs on every login
 - Offer to start it immediately
 
-The only prerequisite is Python from [python.org](https://python.org) — tick **"Add Python to PATH"** during install.
+**Updating:** just `git pull` and run `install.bat` again — it handles everything.
 
 ## Install (macOS / Linux)
 
@@ -41,8 +47,19 @@ All settings are at the top of `main.py`:
 | `SENSITIVITY` | `3.0` | Multiplier over ambient noise to trigger. Raise if too sensitive, lower if not enough. |
 | `COOLDOWN_SECONDS` | `10` | Minimum seconds between alerts |
 | `CONSECUTIVE_CHUNKS_REQUIRED` | `3` | Loud chunks in a row before alerting (prevents spike false-positives) |
-| `AMBIENT_SAMPLE_SECONDS` | `3` | How long to sample on startup |
-| `HEADPHONE_KEYWORDS` | `["headphone", ...]` | Device name substrings to match |
+| `AMBIENT_SAMPLE_SECONDS` | `3` | How long to sample ambient noise on startup — stay quiet during this |
+| `HEADPHONE_KEYWORDS` | `["headphone", ...]` | Device name substrings used to detect headphones |
+| `HEADPHONE_CHECK_INTERVAL` | `5.0` | How often (seconds) to re-check if headphones are connected |
+
+### Headphones not detected?
+
+Run this in a command prompt to print your actual audio device names:
+
+```cmd
+python -c "from pycaw.pycaw import AudioUtilities; [print(d) for d in AudioUtilities.GetAllDevices()]"
+```
+
+Then add the relevant word to `HEADPHONE_KEYWORDS` in `main.py`.
 
 ## Stopping it
 

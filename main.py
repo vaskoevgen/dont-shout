@@ -44,6 +44,9 @@ HEADPHONE_KEYWORDS = [
     "headphone", "headset", "earphone", "earbuds", "airpods",
 ]
 
+# How often to re-check whether headphones are connected (seconds).
+HEADPHONE_CHECK_INTERVAL = 5.0
+
 # ── Audio constants ────────────────────────────────────────────────────────────
 
 CHUNK = 1024
@@ -160,10 +163,6 @@ def _speak(text: str) -> None:
 
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
-
-# Check headphones at most once every this many seconds (avoids hammering the audio API).
-HEADPHONE_CHECK_INTERVAL = 5.0
-
 
 def open_mic_stream(pa: pyaudio.PyAudio) -> pyaudio.Stream:
     """Open mic in WASAPI shared mode on Windows so other apps can use the mic too."""
