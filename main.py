@@ -162,22 +162,25 @@ def _speak(text: str) -> None:
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
 def open_mic_stream() -> sd.InputStream:
-    """Open mic explicitly via WASAPI shared mode on Windows."""
+    """Open mic in WASAPI shared mode on Windows so other apps can use it too."""
     if platform.system() == "Windows":
         try:
             hostapis = sd.query_hostapis()
             wasapi = next((api for api in hostapis if "WASAPI" in api["name"]), None)
             if wasapi and wasapi["default_input_device"] >= 0:
+                # WasapiSettings(exclusive=False) forces shared mode at PortAudio level
+                wasapi_settings = sd.WasapiSettings(exclusive=False)
                 stream = sd.InputStream(
                     device=wasapi["default_input_device"],
                     samplerate=RATE, channels=CHANNELS,
                     dtype="int16", blocksize=CHUNK,
+                    extra_settings=wasapi_settings,
                 )
                 stream.start()
                 print("Mic opened via WASAPI shared mode.")
                 return stream
         except Exception as e:
-            print(f"[WARN] WASAPI setup failed, falling back to default: {e}")
+            print(f"[WARN] WASAPI shared mode failed, falling back: {e}")
     stream = sd.InputStream(samplerate=RATE, channels=CHANNELS, dtype="int16", blocksize=CHUNK)
     stream.start()
     return stream
