@@ -7,15 +7,20 @@ On Windows: reads the mic peak meter via Windows Audio API —
 no audio stream is opened, so the mic stays completely free for games.
 
 On macOS/Linux: uses sounddevice in shared mode.
+
+Shows a system tray icon with current status.
 """
 
 import os
 import platform
 import subprocess
+import threading
 import time
 from pathlib import Path
 
+import pystray
 import pyttsx3
+from PIL import Image, ImageDraw
 from plyer import notification
 
 PID_FILE = Path(__file__).parent / ".dont-shout.pid"
@@ -46,8 +51,41 @@ HEADPHONE_KEYWORDS = [
 # How often (seconds) to re-check if headphones are connected.
 HEADPHONE_CHECK_INTERVAL = 5.0
 
-# How often (seconds) to poll the mic level (Windows peak meter path).
+# How often (seconds) to poll the mic level.
 POLL_INTERVAL = 0.05
+
+# ── Tray icon ─────────────────────────────────────────────────────────────────
+
+def make_icon(color: tuple) -> Image.Image:
+    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    draw.ellipse([4, 4, 60, 60], fill=color)
+    return img
+
+ICON_GREEN = make_icon((30, 180, 30))    # headphones on, monitoring
+ICON_GRAY  = make_icon((140, 140, 140))  # no headphones
+ICON_RED   = make_icon((210, 50, 50))    # alert fired
+
+
+def update_tray(
+    icon: pystray.Icon,
+    headphones: bool,
+    alerted: bool = False,
+    level: float = 0.0,
+    threshold: float = 0.0,
+) -> None:
+    level_pct = int(level * 100)
+    threshold_pct = int(threshold * 100)
+    if alerted:
+        icon.icon = ICON_RED
+        icon.title = f"dont-shout: ALERT! (level {level_pct}% / threshold {threshold_pct}%)"
+    elif headphones:
+        icon.icon = ICON_GREEN
+        icon.title = f"dont-shout: level {level_pct}% / threshold {threshold_pct}%"
+    else:
+        icon.icon = ICON_GRAY
+        icon.title = f"dont-shout: no headphones (level {level_pct}% / threshold {threshold_pct}%)"
+
 
 # ── Windows peak meter (no audio stream needed) ────────────────────────────────
 
@@ -158,7 +196,9 @@ def get_tts_engine() -> pyttsx3.Engine | None:
     return _tts_engine
 
 
-def alert() -> None:
+def alert(icon: pystray.Icon) -> None:
+    update_tray(icon, headphones=True, alerted=True, level=1.0, threshold=0.0)
+
     engine = get_tts_engine()
     if engine:
         try:
@@ -166,6 +206,7 @@ def alert() -> None:
             engine.runAndWait()
         except Exception as e:
             print(f"[WARN] Speech failed: {e}")
+
     notification.notify(
         title="Don't shout!",
         message=ALERT_MESSAGE,
@@ -175,11 +216,11 @@ def alert() -> None:
     print(f"[{time.strftime('%H:%M:%S')}] Alert fired")
 
 
-# ── Main loop ─────────────────────────────────────────────────────────────────
+# ── Monitoring loop (runs in background thread) ────────────────────────────────
 
-def run(get_level):
-    """Shared monitoring loop. get_level() must return a float 0.0–1.0."""
-    print(f"Measuring ambient for {AMBIENT_SAMPLE_SECONDS}s — stay quiet...", flush=True)
+def run(icon: pystray.Icon, get_level) -> None:
+    icon.title = f"dont-shout: measuring ambient for {AMBIENT_SAMPLE_SECONDS}s..."
+
     samples = []
     deadline = time.time() + AMBIENT_SAMPLE_SECONDS
     while time.time() < deadline:
@@ -188,11 +229,11 @@ def run(get_level):
 
     baseline = max(samples) if samples else 0.01
     threshold = max(baseline * SENSITIVITY, 0.01)
-    print(f"Ambient peak: {baseline:.4f}  →  threshold: {threshold:.4f}\n")
-    print("dont-shout running... Ctrl+C to stop.")
+    print(f"Ambient peak: {baseline:.4f}  →  threshold: {threshold:.4f}")
 
     last_alerted = 0.0
     last_headphone_check = 0.0
+    last_tray_update = 0.0
     headphones = False
     loud_streak = 0
 
@@ -209,35 +250,58 @@ def run(get_level):
             headphones = is_headphones_connected()
             last_headphone_check = now
 
+        # Update tray tooltip ~4x per second (not every 50ms poll to avoid flicker)
+        if now - last_tray_update >= 0.25:
+            update_tray(icon, headphones, level=level, threshold=threshold)
+            last_tray_update = now
+
         if (
             loud_streak >= CONSECUTIVE_REQUIRED
             and (now - last_alerted) >= COOLDOWN_SECONDS
             and headphones
         ):
-            alert()
+            alert(icon)
             last_alerted = now
             loud_streak = 0
+            # restore icon color after alert
+            time.sleep(2)
+            update_tray(icon, headphones, level=level, threshold=threshold)
 
         time.sleep(POLL_INTERVAL)
 
 
+# ── Main ──────────────────────────────────────────────────────────────────────
+
 def main() -> None:
     PID_FILE.write_text(str(os.getpid()))
 
+    icon = pystray.Icon(
+        "dont-shout",
+        icon=ICON_GRAY,
+        title="dont-shout: starting...",
+        menu=pystray.Menu(
+            pystray.MenuItem("dont-shout", None, enabled=False),
+            pystray.MenuItem("Stop", lambda icon, item: icon.stop()),
+        ),
+    )
+
+    if platform.system() == "Windows":
+        print("Windows: using peak meter API (mic stays free for games).")
+        get_level = get_mic_peak_windows
+        stream = None
+    else:
+        stream, np_mod = open_mic_stream()
+        get_level = lambda: get_mic_peak_stream(stream, np_mod)
+
+    thread = threading.Thread(target=run, args=(icon, get_level), daemon=True)
+    thread.start()
+
     try:
-        if platform.system() == "Windows":
-            print("Windows detected: using peak meter API (mic stays free for games).")
-            run(get_mic_peak_windows)
-        else:
-            stream, np = open_mic_stream()
-            try:
-                run(lambda: get_mic_peak_stream(stream, np))
-            finally:
-                stream.stop()
-                stream.close()
-    except KeyboardInterrupt:
-        print("\nStopped.")
+        icon.run()  # blocks main thread; tray icon lives here
     finally:
+        if stream:
+            stream.stop()
+            stream.close()
         PID_FILE.unlink(missing_ok=True)
 
 
