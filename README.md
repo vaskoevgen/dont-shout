@@ -12,6 +12,13 @@ While running it continuously monitors the mic. When your voice exceeds the thre
 1. Speaks a voice alert through your headphones
 2. Shows a desktop notification
 
+A **system tray icon** shows the current status at a glance:
+- 🟢 Green — headphones connected, monitoring
+- ⚫ Gray — running but no headphones detected
+- 🔴 Red — alert just fired
+
+Right-click the tray icon → **Stop** to quit.
+
 **On Windows:** reads the mic peak level via the Windows Audio peak meter API — no audio stream is opened at all, so the mic stays completely free for games, Discord, and any other app.
 
 **On macOS/Linux:** uses `sounddevice` to sample the mic.
@@ -28,7 +35,7 @@ While running it continuously monitors the mic. When your voice exceeds the thre
 
 `install.bat` will:
 - Stop any previously running instance automatically
-- Install Python dependencies (`plyer`, `pycaw`, `pyttsx3`)
+- Install Python dependencies (`plyer`, `pycaw`, `pyttsx3`, `pystray`, `Pillow`)
 - Add dont-shout to your Windows startup folder so it runs on every login
 - Offer to start it immediately
 
@@ -68,6 +75,8 @@ Add the relevant word to `HEADPHONE_KEYWORDS` in `main.py`.
 
 ## Stopping it
 
-Task Manager → find `pythonw.exe` → End Task.
+Right-click the tray icon → **Stop**.
+
+Or: Task Manager → find `pythonw.exe` → End Task.
 
 To remove from startup: `Win+R` → `shell:startup` → delete `dont-shout.vbs`.
