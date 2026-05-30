@@ -56,15 +56,31 @@ POLL_INTERVAL = 0.05
 
 # ── Tray icon ─────────────────────────────────────────────────────────────────
 
-def make_icon(color: tuple) -> Image.Image:
-    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+def make_level_icon(level: float, threshold: float, headphones: bool) -> Image.Image:
+    """Draw a live bar chart: bar height = mic level, yellow line = threshold."""
+    SIZE = 64
+    img = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    draw.ellipse([4, 4, 60, 60], fill=color)
-    return img
 
-ICON_GREEN = make_icon((30, 180, 30))    # headphones on, monitoring
-ICON_GRAY  = make_icon((140, 140, 140))  # no headphones
-ICON_RED   = make_icon((210, 50, 50))    # alert fired
+    # Dark background
+    draw.rectangle([0, 0, SIZE - 1, SIZE - 1], fill=(30, 30, 30))
+
+    if not headphones:
+        # Gray diagonal cross = no headphones
+        draw.line([8, 8, SIZE - 8, SIZE - 8], fill=(130, 130, 130), width=6)
+        draw.line([SIZE - 8, 8, 8, SIZE - 8], fill=(130, 130, 130), width=6)
+    else:
+        # Level bar fills from the bottom
+        bar_h = int(min(level, 1.0) * (SIZE - 2))
+        bar_color = (210, 50, 50) if level >= threshold else (30, 180, 30)
+        if bar_h > 0:
+            draw.rectangle([4, SIZE - 1 - bar_h, SIZE - 5, SIZE - 1], fill=bar_color)
+
+        # Threshold line in yellow
+        t_y = SIZE - 1 - int(min(threshold, 1.0) * (SIZE - 2))
+        draw.line([0, t_y, SIZE - 1, t_y], fill=(255, 220, 0), width=2)
+
+    return img
 
 
 def update_tray(
@@ -76,15 +92,13 @@ def update_tray(
 ) -> None:
     level_pct = int(level * 100)
     threshold_pct = int(threshold * 100)
+    icon.icon = make_level_icon(level, threshold, headphones)
     if alerted:
-        icon.icon = ICON_RED
-        icon.title = f"dont-shout: ALERT! (level {level_pct}% / threshold {threshold_pct}%)"
+        icon.title = f"dont-shout: ALERT! level {level_pct}% / threshold {threshold_pct}%"
     elif headphones:
-        icon.icon = ICON_GREEN
         icon.title = f"dont-shout: level {level_pct}% / threshold {threshold_pct}%"
     else:
-        icon.icon = ICON_GRAY
-        icon.title = f"dont-shout: no headphones (level {level_pct}% / threshold {threshold_pct}%)"
+        icon.title = f"dont-shout: no headphones detected"
 
 
 # ── Windows peak meter (no audio stream needed) ────────────────────────────────
