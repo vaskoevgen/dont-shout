@@ -57,7 +57,14 @@ POLL_INTERVAL = 0.05
 # ── Tray icon ─────────────────────────────────────────────────────────────────
 
 def make_level_icon(level: float, threshold: float, headphones: bool) -> Image.Image:
-    """Draw a live bar chart: bar height = mic level, yellow line = threshold."""
+    """Draw a live bar chart: bar height = mic level, yellow line = threshold.
+    Bar is always shown so the user can verify the mic is being read.
+    Color indicates state:
+      green  = headphones detected, below threshold
+      red    = above threshold (about to alert)
+      blue   = mic active but headphones not detected (alerts won't fire)
+    Small dot in top-right corner: green=headphones on, gray=no headphones.
+    """
     SIZE = 64
     img = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -65,20 +72,25 @@ def make_level_icon(level: float, threshold: float, headphones: bool) -> Image.I
     # Dark background
     draw.rectangle([0, 0, SIZE - 1, SIZE - 1], fill=(30, 30, 30))
 
-    if not headphones:
-        # Gray diagonal cross = no headphones
-        draw.line([8, 8, SIZE - 8, SIZE - 8], fill=(130, 130, 130), width=6)
-        draw.line([SIZE - 8, 8, 8, SIZE - 8], fill=(130, 130, 130), width=6)
+    # Level bar — always visible
+    bar_h = int(min(level, 1.0) * (SIZE - 2))
+    if level >= threshold:
+        bar_color = (210, 50, 50)   # red: above threshold
+    elif headphones:
+        bar_color = (30, 180, 30)   # green: headphones on, below threshold
     else:
-        # Level bar fills from the bottom
-        bar_h = int(min(level, 1.0) * (SIZE - 2))
-        bar_color = (210, 50, 50) if level >= threshold else (30, 180, 30)
-        if bar_h > 0:
-            draw.rectangle([4, SIZE - 1 - bar_h, SIZE - 5, SIZE - 1], fill=bar_color)
+        bar_color = (60, 120, 210)  # blue: no headphones, just monitoring
 
-        # Threshold line in yellow
-        t_y = SIZE - 1 - int(min(threshold, 1.0) * (SIZE - 2))
-        draw.line([0, t_y, SIZE - 1, t_y], fill=(255, 220, 0), width=2)
+    if bar_h > 0:
+        draw.rectangle([4, SIZE - 1 - bar_h, SIZE - 5, SIZE - 1], fill=bar_color)
+
+    # Threshold line in yellow
+    t_y = SIZE - 1 - int(min(threshold, 1.0) * (SIZE - 2))
+    draw.line([0, t_y, SIZE - 1, t_y], fill=(255, 220, 0), width=2)
+
+    # Small headphone indicator dot (top-right)
+    dot_color = (30, 200, 30) if headphones else (130, 130, 130)
+    draw.ellipse([SIZE - 14, 2, SIZE - 2, 14], fill=dot_color)
 
     return img
 
@@ -286,6 +298,17 @@ def run(icon: pystray.Icon, get_level) -> None:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def print_audio_devices() -> None:
+    """Print all audio devices so you can find the right keyword for HEADPHONE_KEYWORDS."""
+    try:
+        from pycaw.pycaw import AudioUtilities
+        print("Audio devices found:")
+        for d in AudioUtilities.GetAllDevices():
+            print(f"  {d}")
+    except Exception as e:
+        print(f"Error: {e}")
+
+
 def main() -> None:
     PID_FILE.write_text(str(os.getpid()))
 
@@ -320,4 +343,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    if "--list-devices" in sys.argv:
+        print_audio_devices()
+    else:
+        main()
