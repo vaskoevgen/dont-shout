@@ -291,7 +291,7 @@ def main() -> None:
 
     icon = pystray.Icon(
         "dont-shout",
-        icon=ICON_GRAY,
+        icon=make_level_icon(0.0, 0.0, False),
         title="dont-shout: starting...",
         menu=pystray.Menu(
             pystray.MenuItem("dont-shout", None, enabled=False),
