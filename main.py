@@ -16,6 +16,7 @@ import platform
 import subprocess
 import threading
 import time
+import urllib.request
 from pathlib import Path
 
 import pystray
@@ -53,6 +54,12 @@ HEADPHONE_CHECK_INTERVAL = 5.0
 
 # How often (seconds) to poll the mic level.
 POLL_INTERVAL = 0.05
+
+# Remote TTS message file — post text here and the tool will speak it.
+TTS_MESSAGE_URL = "https://raw.githubusercontent.com/vaskoevgen/dont-shout/tts-messages/message.txt"
+
+# How often (seconds) to check for a new TTS message.
+TTS_POLL_INTERVAL = 90
 
 # ── Tray icon ─────────────────────────────────────────────────────────────────
 
@@ -197,6 +204,7 @@ def _check_linux() -> bool:
 # ── Alert ─────────────────────────────────────────────────────────────────────
 
 _tts_engine: pyttsx3.Engine | None = None
+_tts_lock = threading.Lock()
 
 
 def get_tts_engine() -> pyttsx3.Engine | None:
@@ -209,16 +217,24 @@ def get_tts_engine() -> pyttsx3.Engine | None:
     return _tts_engine
 
 
+def speak(text: str, warning_label: str) -> bool:
+    with _tts_lock:
+        engine = get_tts_engine()
+        if not engine:
+            return False
+        try:
+            engine.say(text)
+            engine.runAndWait()
+            return True
+        except Exception as e:
+            print(f"[WARN] {warning_label} failed: {e}")
+            return False
+
+
 def alert(icon: pystray.Icon, level: float, threshold: float) -> None:
     update_tray(icon, headphones=True, alerted=True, level=level, threshold=threshold)
 
-    engine = get_tts_engine()
-    if engine:
-        try:
-            engine.say(ALERT_MESSAGE)
-            engine.runAndWait()
-        except Exception as e:
-            print(f"[WARN] Speech failed: {e}")
+    speak(ALERT_MESSAGE, "Speech")
 
     notification.notify(
         title="Don't shout!",
@@ -227,6 +243,26 @@ def alert(icon: pystray.Icon, level: float, threshold: float) -> None:
         timeout=5,
     )
     print(f"[{time.strftime('%H:%M:%S')}] Alert fired")
+
+
+# ── Remote TTS message poller ─────────────────────────────────────────────────
+
+def poll_tts_messages() -> None:
+    """Fetch TTS_MESSAGE_URL every TTS_POLL_INTERVAL seconds.
+    Speaks the content via TTS whenever it is non-empty and has changed.
+    """
+    last_seen = None
+    while True:
+        try:
+            with urllib.request.urlopen(TTS_MESSAGE_URL, timeout=10) as resp:
+                text = resp.read().decode("utf-8").strip()
+            if text and text != last_seen:
+                last_seen = text
+                print(f"[{time.strftime('%H:%M:%S')}] TTS message: {text!r}")
+                speak(text, "TTS")
+        except Exception as e:
+            print(f"[WARN] TTS poll failed: {e}")
+        time.sleep(TTS_POLL_INTERVAL)
 
 
 # ── Monitoring loop (runs in background thread) ────────────────────────────────
@@ -305,7 +341,6 @@ def main() -> None:
         title="dont-shout: starting...",
         menu=pystray.Menu(
             pystray.MenuItem("dont-shout", None, enabled=False),
-            pystray.MenuItem("Stop", lambda icon, item: icon.stop()),
         ),
     )
 
@@ -314,6 +349,9 @@ def main() -> None:
 
     thread = threading.Thread(target=run, args=(icon, get_level), daemon=True)
     thread.start()
+
+    tts_thread = threading.Thread(target=poll_tts_messages, daemon=True)
+    tts_thread.start()
 
     try:
         icon.run()  # blocks main thread; tray icon lives here

@@ -66,7 +66,7 @@ echo  - On first run it measures ambient noise for 3 seconds (stay quiet).
 echo  - To start it right now without rebooting, run:
 echo      wscript "%LAUNCHER%"
 echo.
-echo  - To uninstall: delete "%STARTUP%\dont-shout.vbs"
+echo  - To uninstall: run "%APP_DIR%\uninstall.bat"
 echo.
 
 set /p "START_NOW=Start dont-shout now? [Y/n]: "
