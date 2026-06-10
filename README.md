@@ -12,16 +12,30 @@ While running it continuously monitors the mic. When your voice exceeds the thre
 1. Speaks a voice alert through your headphones
 2. Shows a desktop notification
 
-A **system tray icon** shows the current status at a glance:
-- 🟢 Green — headphones connected, monitoring
-- ⚫ Gray — running but no headphones detected
-- 🔴 Red — alert just fired
+A **system tray icon** shows a live mic level bar:
+- Green bar — headphones detected, below threshold
+- Blue bar — mic is active, but headphones were not detected
+- Red bar — level is above the alert threshold
+- Yellow line — current threshold
+- Dot in the top-right — green when headphones are detected, gray otherwise
 
-Right-click the tray icon → **Stop** to quit.
+The tray tooltip shows the current mic level and threshold.
 
-**On Windows:** reads the mic peak level via the Windows Audio peak meter API — no audio stream is opened at all, so the mic stays completely free for games, Discord, and any other app.
+**On Windows:** uses `sounddevice` with WASAPI shared mode, so the mic stays available to games, Discord, and other apps.
 
 **On macOS/Linux:** uses `sounddevice` to sample the mic.
+
+## Remote TTS messages
+
+The app also polls `TTS_MESSAGE_URL` every `TTS_POLL_INTERVAL` seconds. If the remote text file is non-empty and changed since the last check, dont-shout speaks that text through the same TTS engine.
+
+By default this points at:
+
+```text
+https://raw.githubusercontent.com/vaskoevgen/dont-shout/tts-messages/message.txt
+```
+
+Change `TTS_MESSAGE_URL` in `main.py` if you want to use your own text endpoint.
 
 ## Requirements
 
@@ -35,17 +49,27 @@ Right-click the tray icon → **Stop** to quit.
 
 `install.bat` will:
 - Stop any previously running instance automatically
-- Install Python dependencies (`plyer`, `pycaw`, `pyttsx3`, `pystray`, `Pillow`)
+- Install Python dependencies (`sounddevice`, `numpy`, `plyer`, `pycaw`, `pyttsx3`, `pystray`, `Pillow`)
 - Add dont-shout to your Windows startup folder so it runs on every login
 - Offer to start it immediately
 
 **Updating:** `git pull` then run `install.bat` again — it handles everything.
 
+## Uninstall (Windows)
+
+Double-click `uninstall.bat`.
+
+It will:
+- Stop the running dont-shout instance if one is found
+- Remove the startup shortcut
+- Remove the generated `launch.vbs`
+
+The app files stay in this folder so you can delete them manually or keep the repo.
+
 ## Install (macOS / Linux)
 
 ```bash
 pip install -r requirements.txt
-pip install sounddevice numpy
 python main.py
 ```
 
@@ -62,6 +86,9 @@ All settings are at the top of `main.py`:
 | `AMBIENT_SAMPLE_SECONDS` | `3` | How long to sample ambient noise on startup — stay quiet during this |
 | `HEADPHONE_KEYWORDS` | `["headphone", ...]` | Device name substrings used to detect headphones |
 | `HEADPHONE_CHECK_INTERVAL` | `5.0` | How often (seconds) to re-check if headphones are connected |
+| `POLL_INTERVAL` | `0.05` | How often (seconds) to sample the mic level |
+| `TTS_MESSAGE_URL` | GitHub raw text URL | Remote text file to speak when its content changes |
+| `TTS_POLL_INTERVAL` | `90` | How often (seconds) to check for remote TTS messages |
 
 ### Headphones not detected?
 
@@ -75,8 +102,8 @@ Add the relevant word to `HEADPHONE_KEYWORDS` in `main.py`.
 
 ## Stopping it
 
-Right-click the tray icon → **Stop**.
+On Windows, run `uninstall.bat` to stop dont-shout and remove it from startup.
 
-Or: Task Manager → find `pythonw.exe` → End Task.
+To stop it temporarily without uninstalling: Task Manager → find `pythonw.exe` → End Task.
 
-To remove from startup: `Win+R` → `shell:startup` → delete `dont-shout.vbs`.
+On macOS/Linux, press `Ctrl+C` in the terminal where `python main.py` is running.
